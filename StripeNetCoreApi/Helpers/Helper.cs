@@ -12,7 +12,7 @@ namespace StripeNetCoreApi.Helpers
     {
         public static string Encrypt(string clearText)
         {
-            string EncryptionKey = "StripeNetCoreApi2020";
+            string EncryptionKey = "Promocollab2020";
             byte[] clearBytes = Encoding.Unicode.GetBytes(clearText);
             using (Aes encryptor = Aes.Create())
             {
@@ -34,7 +34,7 @@ namespace StripeNetCoreApi.Helpers
 
         public static string Decrypt(string cipherText)
         {
-            string EncryptionKey = "StripeNetCoreApi2020";
+            string EncryptionKey = "Promocollab2020";
             byte[] cipherBytes = Convert.FromBase64String(cipherText);
             using (Aes encryptor = Aes.Create())
             {

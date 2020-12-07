@@ -31,6 +31,7 @@ namespace StripeNetCoreApi.Helpers
                 errorNumbersToAdd: null);
             }));
 
+            services.AddScoped<IStripeDbContext>(provider => provider.GetService<StripeDbContext>());
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IUserRepository, UserRepository>();
 
@@ -42,6 +43,9 @@ namespace StripeNetCoreApi.Helpers
 
             services.AddScoped<IAddressSerevice, AddressService>();
             services.AddScoped<IAddressRepository, AddressRepository>();
+
+            services.AddScoped<IOrderService, OrderService>();
+            services.AddScoped<IOrderRepository, OrderRepository>();
 
             services.AddScoped<IUnitOfWork>(ctx => new EFUnitOfWork(ctx.GetRequiredService<StripeDbContext>()));
 

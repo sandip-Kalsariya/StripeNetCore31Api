@@ -8,7 +8,7 @@ using StripeNetCoreApi.Helpers;
 
 namespace StripeNetCoreApi.Model
 {
-    public class StripeDbContext : DbContext
+    public class StripeDbContext : DbContext, IStripeDbContext
     {
         public StripeDbContext(DbContextOptions options) : base(options)
         {
@@ -19,6 +19,8 @@ namespace StripeNetCoreApi.Model
         public DbSet<UserSession> UserSessions { get; set; }
         public DbSet<Card> Cards { get; set; }
         public DbSet<Address> Addresses { get; set; }
+        public DbSet<Order> Orders { get; set; }
+
 
 
         protected override void OnModelCreating(ModelBuilder builder)

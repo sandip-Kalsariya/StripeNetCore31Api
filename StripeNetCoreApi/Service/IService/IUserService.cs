@@ -13,6 +13,6 @@ namespace StripeNetCoreApi.Service.IService
         Response<UserProfileDTO> UserRegistration(UserRegistrationDTO dto);
         Response<ServiceProviderDTO> ServiceProviderRegistration(ServiceProviderRegistrationDTO dto);
         Response<UserProfileDTO> Authenticate(LoginDTO dto);
-        Response<string> PayFromUser(int UserId);
+        Response<string> PayFromUser(PaymentRequestDTO dto,int UserId);
     }
 }

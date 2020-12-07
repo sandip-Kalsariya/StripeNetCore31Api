@@ -43,12 +43,12 @@ namespace StripeNetCoreApi.Controllers
 
         [Authorize]
         [HttpPost("Pay")]
-        public IActionResult Pay()
+        public IActionResult Pay(PaymentRequestDTO dto)
         {
             var usersession = (UserSession)HttpContext.Items["usersession"];
             if (usersession.User.RoleId != 3)
                 return Unauthorized();
-            var response = _userService.PayFromUser(usersession.UserId);
+            var response = _userService.PayFromUser(dto,usersession.UserId);
             if (response.HasError)
                 return Error(response);
             return Ok(response);

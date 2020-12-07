@@ -16,6 +16,7 @@ using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
+using StripeNetCoreApi.DTO.EnumDTO;
 
 namespace StripeNetCoreApi.Service
 {
@@ -26,13 +27,20 @@ namespace StripeNetCoreApi.Service
         private readonly IUserSessionService _userSessionService;
         private readonly AppSettings _appSettings;
         private readonly IAddressSerevice _addressSerevice;
+        private readonly IOrderRepository _orderRepository;
+        private readonly ICardService _cardService;
+        private readonly ICardRepository _cardRepository;
+
 
         public UserService(
             IUserRepository userRepository,
             BaseServices baseServices,
             IUserSessionService userSessionService,
             IOptions<AppSettings> appSettings,
-            IAddressSerevice addressSerevice
+            IAddressSerevice addressSerevice,
+            IOrderRepository orderRepository,
+            ICardService cardService,
+            ICardRepository cardRepository
             )
         {
             _userRepository = userRepository;
@@ -40,6 +48,9 @@ namespace StripeNetCoreApi.Service
             _userSessionService = userSessionService;
             _appSettings = appSettings.Value;
             _addressSerevice = addressSerevice;
+            _orderRepository = orderRepository;
+            _cardService = cardService;
+            _cardRepository = cardRepository;
         }
 
         public Response<UserProfileDTO> UserRegistration(UserRegistrationDTO dto)
@@ -263,12 +274,34 @@ namespace StripeNetCoreApi.Service
             return tokenHandler.WriteToken(token);
         }
 
-        public Response<string> PayFromUser(int UserId)
+        public Response<string> PayFromUser(PaymentRequestDTO dto, int UserId)
         {
             var response = new Response<string>();
             string CardId = null;
             try
             {
+                var Order = _orderRepository.GetbyidwithInclude(a => a.Id == dto.PromoOrderId && a.DateDeleted == null, "User");
+                if (Order == null)
+                {
+                    response.AddValidationError("", "Order doesnot exist.");
+                    return response;
+                }
+
+                if (dto.CardId == "" || dto.CardId == null)
+                {
+                    var cardresponse = _cardService.Create(dto.CardDetail, UserId);
+                    if (cardresponse.HasError)
+                    {
+                        response.ErrorMessage = cardresponse.ErrorMessage;
+                        return response;
+                    }
+                    CardId = cardresponse.Data;
+                }
+                else
+                {
+                    CardId = _cardRepository.GetById(a => a.StripeCardId == dto.CardId && a.DateDeleted == null).StripeCardId;
+                }
+
                 var userResponse = _userRepository.GetbyidwithInclude(a => a.Id == UserId && a.DateDeleted == null, "Roles,Address");
                 if (userResponse == null)
                 {
@@ -276,19 +309,27 @@ namespace StripeNetCoreApi.Service
                     return response;
                 }
 
+                //Add Charge
+                double amt = Order.Net + Order.Fee;
+                double centamt = amt * 100;
+                double charge = (centamt * 2.9 / 100);  // 2.9 % of service price
+                double centchanrge = (0.3 * 100);        // 0.30 Fixed Charge
+                double totalCharg = charge + centchanrge;
+                double finalamount = centamt + totalCharg;
+
                 var responsepayment = _baseServices.Payment(new PaymentDTO
                 {
-                    Amount = Convert.ToInt64(Math.Ceiling(100.00)),
+                    Amount = Convert.ToInt64(Math.Ceiling(finalamount)),
                     Currency = "usd",
                     CustomerId = userResponse.Stripe_CustomerId,
                     CardId = CardId,
                     Desciption = "Pay for Test",
                     Metadata = new Dictionary<string, string>
                     {
-                        { "OrderId", "1235698468"},
-                        { "Service Title", "test"},
-                        { "Discount", "0" },
-                        { "Fee", "2" }
+                        { "OrderId", Order.Id.ToString()},
+                        { "Service Title", ""},
+                        { "Discount", Order.Discount.ToString() },
+                        { "Fee", Order.Fee.ToString() }
                     },
                     address = userResponse.Address
                 });
@@ -297,6 +338,23 @@ namespace StripeNetCoreApi.Service
                     response.ErrorMessage = responsepayment.ErrorMessage;
                     return response;
                 }
+
+                if (responsepayment.Success && responsepayment.Data != null && responsepayment.Data.Status == "succeeded")
+                {
+                    Order.PaymentStaus = PaymentStaus.Completed;
+                }
+                else if (responsepayment.Success && responsepayment.Data != null && responsepayment.Data.Status == "pending")
+                {
+                    Order.PaymentStaus = PaymentStaus.Pending;
+                }
+                else if (responsepayment.Success && responsepayment.Data != null && responsepayment.Data.Status == "failed")
+                {
+                    Order.PaymentStaus = PaymentStaus.Reject;
+                }
+
+                Order.ChargeId = responsepayment.Data.Id;
+
+                _orderRepository.Update(Order);
 
                 response.Data = responsepayment.Data.Id;
                 response.Success = true;
@@ -308,6 +366,60 @@ namespace StripeNetCoreApi.Service
             return response;
         }
 
+        //public Response CancledPromoOrder(int UserId, CancledPromoOrderDTO dto)
+        //{
+        //    var response = new Response();
+        //    try
+        //    {
+        //        var promoorder = _promoOrderRepository.GetbyidwithInclude(a => a.Id == dto.PromoOrderId && a.DateDeleted == null, "InfluncerServices,User,Cart"); //a.PromoStatus != PromoStatus.Completed &&
+        //        if (promoorder == null)
+        //        {
+        //            response.AddValidationError("", "Order Doesnot Exist.");
+        //            response.Status = 406;
+        //            return response;
+        //        }
+        //        if (dto.Status == OrderStatus.CancledByInfluncer)
+        //        {
+        //            if (promoorder.Status == dto.Status)
+        //            {
+        //                response.AddValidationError("", "Order Already Cancled By Influncer.");
+        //                response.Status = 406;
+        //                return response;
+        //            }
+        //            promoorder.Status = OrderStatus.CancledByInfluncer;
+        //            promoorder.Reason_NotAbleComplete = dto.ResionForCancellation;
+        //            if (promoorder.PaymentStaus == PaymentStaus.Completed)
+        //            {
+        //                // *********** Add Brand Refund Service. *************//
+        //                var refundresponse = _baseServices.Refund(promoorder.ChargeId);
+        //                if (refundresponse.HasError)
+        //                    return refundresponse;
+
+        //                promoorder.PaymentStaus = PaymentStaus.Refund;
+        //            }
+        //        }
+        //        else if (dto.Status == OrderStatus.CancledByBrand)
+        //        {
+        //            if (promoorder.Status == dto.Status)
+        //            {
+        //                response.AddValidationError("", "Order Already Cancled By Brand.");
+        //                response.Status = 406;
+        //                return response;
+        //            }
+        //            promoorder.Status = OrderStatus.CancledByBrand;
+        //            promoorder.Reason_NotAbleComplete = dto.ResionForCancellation;
+        //        }
+
+        //        promoorder.DateModified = DateTime.UtcNow.ToString();
+        //        _promoOrderRepository.Update(promoorder);
+        //        response.Success = true;
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        HandleException(response, ex);
+        //    }
+        //    return response;
+        //}
 
     }
 }
